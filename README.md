@@ -1,0 +1,2 @@
+# annotation_desktop_tools
+预标注win工具，通过yolo模型推理素材预标注，可用于离线状态标注素材
