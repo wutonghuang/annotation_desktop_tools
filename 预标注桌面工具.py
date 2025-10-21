@@ -957,7 +957,7 @@ class ImageAnnotator(ttk.Frame):
 
     def save_annotations_direct(self):
         """直接保存标注"""
-        if not self.image_path or not self.annotations:
+        if not self.image_path:
             messagebox.showwarning("警告", "没有可保存的标注")
             return
 
@@ -1004,6 +1004,8 @@ class ImageAnnotator(ttk.Frame):
         json_path = os.path.splitext(self.image_path)[0] + "_annotations.json"
         if  not self.annotations:
             self.remove_annotations_file(json_path)
+            self.modified = False
+            self.status_var.set("没有可保存的标注")
             messagebox.showwarning("警告", "没有可导出的标注")
             return
         try:
@@ -1101,6 +1103,7 @@ class ImageAnnotator(ttk.Frame):
         """
         if os.path.exists(file_path):
             os.remove(file_path)
+            self.status_var_right.set(f"已删除标注文件: {file_path}")
 
     def on_label_select(self, event):
         """处理标签选择事件"""
@@ -1157,6 +1160,8 @@ class ImageAnnotator(ttk.Frame):
         xml_path = os.path.splitext(self.image_path)[0] + ".xml"
         if not self.annotations:
             self.remove_annotations_file(xml_path)
+            self.modified = False
+            self.status_var.set("没有可保存的标注")
             messagebox.showwarning("警告", "没有可导出的标注")
             return
 
@@ -1235,6 +1240,8 @@ class ImageAnnotator(ttk.Frame):
         txt_path = os.path.splitext(self.image_path)[0] + ".txt"
         if not self.annotations:
             self.remove_annotations_file(txt_path)
+            self.modified = False
+            self.status_var.set("没有可保存的标注")
             messagebox.showwarning("警告", "没有可导出的标注")
             return
 
