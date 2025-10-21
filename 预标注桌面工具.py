@@ -1002,6 +1002,10 @@ class ImageAnnotator(ttk.Frame):
         }
 
         json_path = os.path.splitext(self.image_path)[0] + "_annotations.json"
+        if  not self.annotations:
+            self.remove_annotations_file(json_path)
+            messagebox.showwarning("警告", "没有可导出的标注")
+            return
         try:
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(annotation_data, f, indent=2, ensure_ascii=False)
@@ -1064,11 +1068,18 @@ class ImageAnnotator(ttk.Frame):
             lines = None
             if os.path.exists(text_to_path):
                 with open(text_to_path, 'r', encoding="utf-8") as file:
+                    lines = file.read().splitlines()
+            if self.labels:
+                lines = self.labels
+            elif os.path.exists(text_to_path):
+                with open(text_to_path, 'r', encoding="utf-8") as file:
                     lines = file.readlines()
+            else:
+                messagebox.showerror("错误", "未找到标签文件")
             all_objects = []
             if os.path.exists(txt_file) and lines:
                 with open(txt_file, 'r', encoding="utf-8") as f:
-                    objects = f.readlines()
+                    objects = f.read().splitlines()
                     for o_index, object in enumerate(objects):
                         object_info = object.strip().split(' ')
                         x_center = float(object_info[1]) * img_width
@@ -1077,12 +1088,19 @@ class ImageAnnotator(ttk.Frame):
                         yminVal = int(y_center - 0.5 * float(object_info[4]) * img_height)
                         xmaxVal = int(x_center + 0.5 * float(object_info[3]) * img_width)
                         ymaxVal = int(y_center + 0.5 * float(object_info[4]) * img_height)
-                        cdata = {"label": lines[int(object_info[0])], "bbox": [xminVal, yminVal, xmaxVal, ymaxVal],
+                        cdata = {"label": lines[int(object_info[0])].strip(), "bbox": [xminVal, yminVal, xmaxVal, ymaxVal],
                                  "id": o_index}
                         all_objects.append(cdata)
             self.annotations = all_objects
             self.update_annotation_list()  # 更新标注列表
             self.status_var_right.set(f"已加载标注: {len(self.annotations)} 个")
+    
+    def remove_annotations_file(self, file_path):
+        """
+        移除所有标注删除文件
+        """
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
     def on_label_select(self, event):
         """处理标签选择事件"""
@@ -1136,6 +1154,11 @@ class ImageAnnotator(ttk.Frame):
                 return {"error": f"XML解析错误: {e}"}
             except Exception as e:
                 return {"error": f"处理过程中发生错误: {e}"}
+        xml_path = os.path.splitext(self.image_path)[0] + ".xml"
+        if not self.annotations:
+            self.remove_annotations_file(xml_path)
+            messagebox.showwarning("警告", "没有可导出的标注")
+            return
 
         try:
             annotation = ET.Element("annotation")
@@ -1199,8 +1222,6 @@ class ImageAnnotator(ttk.Frame):
             rough_string = ET.tostring(annotation, encoding='utf-8')
             reparsed = minidom.parseString(rough_string)
             pretty_xml = reparsed.toprettyxml(indent="  ")
-
-            xml_path = os.path.splitext(self.image_path)[0] + ".xml"
             with open(xml_path, "w", encoding="utf-8") as f:
                 f.write(pretty_xml)
 
@@ -1211,7 +1232,9 @@ class ImageAnnotator(ttk.Frame):
 
     def export_yolo(self):
         """导出为YOLO格式 - 新增方法"""
-        if not self.image_path or not self.annotations:
+        txt_path = os.path.splitext(self.image_path)[0] + ".txt"
+        if not self.annotations:
+            self.remove_annotations_file(txt_path)
             messagebox.showwarning("警告", "没有可导出的标注")
             return
 
@@ -1238,7 +1261,6 @@ class ImageAnnotator(ttk.Frame):
                 yolo_lines.append(f"{class_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}")
 
             # 写入YOLO格式文件
-            txt_path = os.path.splitext(self.image_path)[0] + ".txt"
             with open(txt_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(yolo_lines))
 
