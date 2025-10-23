@@ -163,6 +163,13 @@ class ImageAnnotator(ttk.Frame):
         self.canvas.bind("<space>", lambda event: self.save_annotations_direct())
         self.canvas.bind("<KeyPress-W>", lambda event: self.start_rect_mode())
         self.canvas.bind("<KeyPress-w>", lambda event: self.start_rect_mode())
+        # self.canvas.bind("<KeyPress-s>", lambda event: self.save_confirm_annotations_direct())
+        # self.canvas.bind("<KeyPress-S>", lambda event: self.save_confirm_annotations_direct())
+        self.canvas.bind("<KeyPress-E>", lambda event: self.toggle_state())
+        self.canvas.bind("<KeyPress-e>", lambda event: self.toggle_state())
+        self.canvas.bind("<KeyPress-Q>", lambda event: self.quit())
+        self.canvas.bind("<KeyPress-q>", lambda event: self.quit())
+        self.canvas.bind("<KeyPress-Delete>", lambda event: self.delete_selected_annotation())
 
         # 中间控制面板
         control_panel = ttk.LabelFrame(content_frame, text="标注控制", padding=5, width=200)
@@ -234,7 +241,7 @@ class ImageAnnotator(ttk.Frame):
         self.image_offset_y = 0
 
     def files_listbox(self, index=0, judge=True, confirm_judge=False):
-
+        """更新文件列表"""
         if judge:
             if self.files_annotation_listbox.get(0, tk.END):  # 如果列表不为空
                 self.files_annotation_listbox.delete(0, tk.END)  # 清空列表
@@ -245,22 +252,42 @@ class ImageAnnotator(ttk.Frame):
             confirm_path = os.path.join(os.path.dirname(self.image_path), "confirm_example.txt")
             confirm_judge_file = True
             if os.path.exists(confirm_path):
+                files_name_dict = {}
                 with open(confirm_path, 'r', encoding="utf-8") as f:
                     files_name = f.readlines()
-                    if len(self.image_files) == len(files_name):
+                    if len(self.image_files) != len(files_name):
                         confirm_judge_file = False
                     for line in files_name:
                         line_split = line.strip().split(" ")
                         f_name = line_split[0]
                         file_num = line_split[-1]
-                        if file_num == "1":
-                            self.files_annotation_listbox.itemconfig(self.image_files.index(f_name), {'bg': "#99FF99"})
-
-            if confirm_judge_file:
+                        if f_name not in self.image_files:
+                            confirm_judge_file = False
+                            continue
+                        else:
+                            if file_num == "1":
+                                try:
+                                    self.files_annotation_listbox.itemconfig(self.image_files.index(f_name),
+                                                                             {'bg': "#99FF99"})
+                                except:
+                                    pass
+                            files_name_dict[f_name] = file_num
+                    f.close()
+                if not confirm_judge_file:
+                    with open(confirm_path, 'w', encoding="utf-8") as f:
+                        for i in self.image_files:
+                            if i in list(files_name_dict.keys()):
+                                f.write(i + f" {files_name_dict[i]}" + '\n')
+                            else:
+                                f.write(i + " 0" + '\n')
+                        f.close()
+                files_name.clear()
+                files_name_dict.clear()
+            else:
                 with open(confirm_path, 'w', encoding="utf-8") as f:
                     for i in self.image_files:
                         f.write(i + " 0" + '\n')
-
+                    f.close()
         self.files_annotation_listbox.selection_clear(0, tk.END)  # 清除所有选中项
         self.files_annotation_listbox.selection_set(index)  # 选择当前项
         self.files_annotation_listbox.see(index)  # 滚动到选中项
@@ -277,7 +304,7 @@ class ImageAnnotator(ttk.Frame):
             self.image_files.clear()
             self.image_files.append(file_path.replace("\\", "/"))
             self.load_image(file_path)
-            self.files_listbox()
+            self.files_listbox()  # 更新文件列表
 
     def open_folder(self):
         """打开图像文件夹"""
@@ -307,17 +334,15 @@ class ImageAnnotator(ttk.Frame):
         try:
             self.image_path = image_path
             self.original_image = Image.open(image_path)
-
-            self.annotations = []
             self.current_annotation = None
             self.scale_factor = 1.0
             self.selected_bbox_id = None
+            self.annotations = []
             self.modified = False
             # 加载已有的标注文件
             self.load_annotations()
             # 显示图像（适应界面）
             self.display_image_func()
-
             self.status_var_right.set(
                 f"已加载: {os.path.basename(image_path)}，素材进行{self.image_files.index(self.image_path) + 1} / {len(self.image_files)}")
         except Exception as e:
@@ -326,10 +351,12 @@ class ImageAnnotator(ttk.Frame):
     def display_image_func(self):
         """在画布上显示图像 - 默认自动适应界面"""
         if not self.original_image:
+            messagebox.showwarning("警告", "未读取到图片信息")
             return
 
         # 清除画布
         self.canvas.delete("all")
+
         # 获取画布尺寸
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
@@ -485,38 +512,40 @@ class ImageAnnotator(ttk.Frame):
         if self.mode == "rect":
             self.start_x = img_x
             self.start_y = img_y
-            self.rect = self.canvas.create_rectangle(x, y, x, y, outline="red", width=1, dash=(4, 4))
+            self.rect = self.canvas.create_rectangle(x, y, x, y, outline="red", width=2, dash=(4, 4))
         else:
             # 选择模式：检查是否点击了标注框
             self.selected_bbox_id = None
-            overlapping_items = self.canvas.find_overlapping(x - 3, y - 3, x + 3, y + 3)
-
+            overlapping_items = self.canvas.find_overlapping(x - 3, y - 3, x + 3, y + 3)  # 增加一些误差范围
             for item in overlapping_items:
                 tags = self.canvas.gettags(item)
                 if "bbox" in tags:
                     self.selected_bbox_id = item
-                    bbox_index = int(tags[1]) if len(tags) > 1 else -1
-                    if 0 <= bbox_index < len(self.annotations):
-                        self.current_annotation = self.annotations[bbox_index]
-                        self.highlight_annotation(bbox_index)
-                        # 检查是否是调整大小操作
+                    # bbox_index = int(tags[1]) if len(tags) > 1 else -1
+                    # if 0 <= bbox_index <= len(self.annotations):
+                    for d_index, annotation in enumerate(self.annotations):
+                        if str(annotation["canvas_ids"]) == tags[2]:
+                            self.current_annotation = annotation
+                            self.highlight_annotation(d_index)
+                            break
+                    # 检查是否是调整大小操作
+                    bbox_coords = self.canvas.coords(item)
+                    self.resize_mode = self.get_resize_mode(x, y, bbox_coords)
+                    if self.resize_mode:
+                        # 进入调整大小模式
+                        self.mode = "resize"
+                        self.resizing = True
+                        self.canvas.config(cursor=self.get_resize_cursor())
+                        self.status_var.set(f"模式: 调整标注框大小 ({self.resize_mode})")
+                    else:
+                        # 进入移动模式
+                        self.mode = "move"
+                        self.dragging = True
                         bbox_coords = self.canvas.coords(item)
-                        self.resize_mode = self.get_resize_mode(x, y, bbox_coords)
-                        if self.resize_mode:
-                            # 进入调整大小模式
-                            self.mode = "resize"
-                            self.resizing = True
-                            self.canvas.config(cursor=self.get_resize_cursor())
-                            self.status_var.set(f"模式: 调整标注框大小 ({self.resize_mode})")
-                        else:
-                            # 进入移动模式
-                            self.mode = "move"
-                            self.dragging = True
-                            bbox_coords = self.canvas.coords(item)
-                            self.drag_offset_x = x - bbox_coords[0]
-                            self.drag_offset_y = y - bbox_coords[1]
-                            self.canvas.config(cursor="fleur")
-                            self.status_var.set("模式: 移动标注框")
+                        self.drag_offset_x = x - bbox_coords[0]
+                        self.drag_offset_y = y - bbox_coords[1]
+                        self.canvas.config(cursor="fleur")
+                        self.status_var.set("模式: 移动标注框")
                     break
 
     def on_canvas_drag(self, event):
@@ -537,13 +566,13 @@ class ImageAnnotator(ttk.Frame):
 
             new_x2 = new_x1 + width
             new_y2 = new_y1 + height
-
+            # 确保坐标有效
             self.canvas.coords(self.selected_bbox_id, new_x1, new_y1, new_x2, new_y2)
 
             # 更新关联的文本标签
             tags = self.canvas.gettags(self.selected_bbox_id)
             if len(tags) > 2:
-                text_id = int(tags[2])
+                text_id = int(eval(tags[2])[1])
                 self.canvas.coords(text_id, new_x1, new_y1 - 10)
         elif self.mode == "resize" and self.resizing and self.selected_bbox_id:
             # 调整标注框大小
@@ -576,7 +605,7 @@ class ImageAnnotator(ttk.Frame):
             # 更新关联的文本位置
             tags = self.canvas.gettags(self.selected_bbox_id)
             if len(tags) > 2:
-                text_id = int(tags[2])
+                text_id = int(eval(tags[2])[1])
                 self.canvas.coords(text_id, x1, y1 - 10)
 
     def on_canvas_release(self, event):
@@ -584,14 +613,13 @@ class ImageAnnotator(ttk.Frame):
         if self.mode == "rect" and self.rect:
             end_x = self.canvas.canvasx(event.x) - self.image_offset_x
             end_y = self.canvas.canvasy(event.y) - self.image_offset_y
-
             # 转换为原始图像坐标
             if abs(end_x - self.start_x) > 5 and abs(end_y - self.start_y) > 5:  # 忽略过小的矩形
                 x1 = int(min(self.start_x, end_x) / self.scale_factor)
                 y1 = int(min(self.start_y, end_y) / self.scale_factor)
                 x2 = int(max(self.start_x, end_x) / self.scale_factor)
                 y2 = int(max(self.start_y, end_y) / self.scale_factor)
-                self.prompt_for_label(x1, y1, x2, y2)
+                self.prompt_for_label(x1, y1, x2, y2)  #
             else:
                 self.canvas.delete(self.rect)
 
@@ -630,6 +658,7 @@ class ImageAnnotator(ttk.Frame):
                 self.current_annotation["bbox"] = [x1, y1, x2, y2]
                 self.update_annotation_list()
                 self.show_annotation_details(self.current_annotation)
+                self.highlight_annotation(-1)
                 self.modified = True
 
             self.resizing = False
@@ -647,28 +676,26 @@ class ImageAnnotator(ttk.Frame):
             self.status_var.set(
                 f"界面位置: {x}, {y}，图片当前位置: {int((event.x - self.image_offset_x) / self.scale_factor)}, {int((event.y - self.image_offset_y) / self.scale_factor)}")
             overlapping_items = self.canvas.find_overlapping(x - 3, y - 3, x + 3, y + 3)  # 找到所有与鼠标位置重叠的项
-            on_bbox = False
-            resize_mode = None
 
             for item in overlapping_items:
                 tags = self.canvas.gettags(item)
                 if "bbox" in tags:
                     on_bbox = True
                     bbox_coords = self.canvas.coords(item)
-                    resize_mode = self.get_resize_mode(x, y, bbox_coords)
+                    self.resize_mode = self.get_resize_mode(x, y, bbox_coords)
+                    # 根据调整模式设置光标形状
+                    if self.resize_mode:
+                        self.canvas.config(cursor=self.get_resize_cursor())
+                    else:
+                        self.canvas.config(cursor="hand2")
                     break
-            if resize_mode:
-                # 根据调整模式设置光标形状
-                self.canvas.config(cursor=self.get_resize_cursor())
-            elif on_bbox:
-                self.canvas.config(cursor="hand2")
-            else:
-                self.canvas.config(cursor="arrow")
+                else:
+                    self.canvas.config(cursor="arrow")
 
     def prompt_for_label(self, x1, y1, x2, y2):
         """为新建的标注弹出标签选择对话框"""
         if self.state:
-            label = self.current_label.get()
+            label = self.current_label.get().strip()
             if label:
                 annotation = {
                     "label": label,
@@ -699,18 +726,15 @@ class ImageAnnotator(ttk.Frame):
             x = root_x + (root_width - dialog_width) // 2
             y = root_y + (root_height - dialog_height) // 2
             dialog.geometry(f"+{x}+{y}")
-
             tk.Label(dialog, text="选择或输入标签:").pack(pady=10)
-
             label_var = tk.StringVar(value=self.current_label.get())
             label_combo = ttk.Combobox(dialog, textvariable=label_var, values=self.labels)
             label_combo.pack(pady=5, padx=20, fill=tk.X)
-
             button_frame = tk.Frame(dialog)
             button_frame.pack(pady=10)
 
             def on_ok():
-                label_name = label_var.get()
+                label_name = label_var.get().strip()
                 if label_name:
                     annotation_data = {
                         "label": label_name,
@@ -754,7 +778,7 @@ class ImageAnnotator(ttk.Frame):
         # 绘制矩形框
         rect_id = self.canvas.create_rectangle(
             x1_disp, y1_disp, x2_disp, y2_disp,
-            outline="red", width=1, tags=("bbox", str(annotation["id"]))
+            outline="red", width=2, tags=("bbox", str(annotation["id"]))
         )
 
         # 绘制标签文本
@@ -762,7 +786,7 @@ class ImageAnnotator(ttk.Frame):
                                           font=("Arial", 5, "bold"), tags=("label", str(annotation["id"])))
 
         annotation["canvas_ids"] = [rect_id, text_id]
-        self.canvas.itemconfig(rect_id, tags=("bbox", str(annotation["id"]), str(text_id)))  # 关联矩形框和文本
+        self.canvas.itemconfig(rect_id, tags=("bbox", str(annotation["id"]), str([rect_id, text_id])))  # 关联矩形框和文本
 
     def redraw_annotations(self):
         """重绘所有标注"""
@@ -779,7 +803,7 @@ class ImageAnnotator(ttk.Frame):
             if "canvas_ids" in ann:
                 for canvas_id in ann["canvas_ids"]:
                     if self.canvas.type(canvas_id) == "rectangle":
-                        self.canvas.itemconfig(canvas_id, outline="red", width=1)
+                        self.canvas.itemconfig(canvas_id, outline="red", width=2)
                     elif self.canvas.type(canvas_id) == "text":
                         self.canvas.itemconfig(canvas_id, fill="red")
 
@@ -856,7 +880,6 @@ class ImageAnnotator(ttk.Frame):
             if self.current_annotation in self.annotations:
                 self.annotations.remove(self.current_annotation)
                 self.modified = True
-
             self.update_annotation_list()
             self.detail_text.delete(1.0, tk.END)
             self.current_annotation = None
@@ -899,7 +922,7 @@ class ImageAnnotator(ttk.Frame):
         if not self.prompt_save():
             return
         self.detail_text.delete(1.0, tk.END)  # 清除详情文本框内容
-        self.status_var.set("已切换到上一张图像")
+
         if self.original_image:
             self.original_image.close()
         if self.files_annotation_listbox.curselection():
@@ -909,6 +932,7 @@ class ImageAnnotator(ttk.Frame):
             self.files_listbox(self.current_image_index, judge=False)
             self.canvas.config(bg='lightgray')  # 更改背景色为灰色
             self.load_image(self.image_files[self.current_image_index])
+            self.status_var.set("已切换到上一张图像")
         else:
             messagebox.showerror("错误", "已经是第一张图像")
 
@@ -921,7 +945,8 @@ class ImageAnnotator(ttk.Frame):
         if not self.prompt_save():
             return
         self.detail_text.delete(1.0, tk.END)  # 清除详情文本框内容
-        self.status_var.set("已切换到下一张图像")
+        self.save_confirm_annotations_direct()
+
         if self.original_image:
             self.original_image.close()
         if self.files_annotation_listbox.curselection():
@@ -931,6 +956,7 @@ class ImageAnnotator(ttk.Frame):
             self.files_listbox(self.current_image_index, judge=False)
             self.canvas.config(bg='lightgray')  # 更改背景色为灰色
             self.load_image(self.image_files[self.current_image_index])
+            self.status_var.set("已切换到下一张图像")
         else:
             messagebox.showerror("错误", "已经是最后一张图像")
 
@@ -958,7 +984,7 @@ class ImageAnnotator(ttk.Frame):
     def save_annotations_direct(self):
         """直接保存标注"""
         if not self.image_path:
-            messagebox.showwarning("警告", "没有可保存的标注")
+            messagebox.showwarning("警告", "没有图像路径")
             return
 
         # 检查标注框边界
@@ -986,7 +1012,8 @@ class ImageAnnotator(ttk.Frame):
             for i, line in enumerate(lines):
                 if str(self.image_path) in line:
                     lines[i] = str(self.image_path) + " 1" + '\n'
-                    self.files_annotation_listbox.itemconfig(i, {'bg': "#99FF99"})
+                    self.files_annotation_listbox.itemconfig(self.image_files.index(str(self.image_path)),
+                                                             {'bg': "#99FF99"})
                     break
             with open(confirm_path, 'w', encoding="utf-8") as file:
                 file.writelines(lines)
@@ -994,6 +1021,7 @@ class ImageAnnotator(ttk.Frame):
 
     def save_annotations(self):
         """保存标注到JSON文件"""
+
         annotation_data = {
             "image_path": self.image_path,
             "image_size": self.original_image.size,
@@ -1002,7 +1030,7 @@ class ImageAnnotator(ttk.Frame):
         }
 
         json_path = os.path.splitext(self.image_path)[0] + "_annotations.json"
-        if  not self.annotations:
+        if not self.annotations:
             self.remove_annotations_file(json_path)
             self.modified = False
             self.status_var.set("没有可保存的标注")
@@ -1053,7 +1081,7 @@ class ImageAnnotator(ttk.Frame):
                 # 提取xml_object元素
                 xml_objects = xml_root.findall('.//object')
                 for o_index, ob in enumerate(xml_objects):
-                    cdata = {"label": ob.find('name').text,
+                    cdata = {"label": ob.find('name').text.strip(),
                              "bbox": [int(ob.find('bndbox/xmin').text), int(ob.find('bndbox/ymin').text),
                                       int(ob.find('bndbox/xmax').text), int(ob.find('bndbox/ymax').text)],
                              "id": o_index}
@@ -1068,14 +1096,11 @@ class ImageAnnotator(ttk.Frame):
             text_to_path = os.path.join(os.path.dirname(self.image_path), "classes.txt")
             txt_file = os.path.splitext(self.image_path)[0] + ".txt"
             lines = None
-            if os.path.exists(text_to_path):
-                with open(text_to_path, 'r', encoding="utf-8") as file:
-                    lines = file.read().splitlines()
             if self.labels:
                 lines = self.labels
             elif os.path.exists(text_to_path):
                 with open(text_to_path, 'r', encoding="utf-8") as file:
-                    lines = file.readlines()
+                    lines = file.read().splitlines()
             else:
                 messagebox.showerror("错误", "未找到标签文件")
             all_objects = []
@@ -1090,13 +1115,14 @@ class ImageAnnotator(ttk.Frame):
                         yminVal = int(y_center - 0.5 * float(object_info[4]) * img_height)
                         xmaxVal = int(x_center + 0.5 * float(object_info[3]) * img_width)
                         ymaxVal = int(y_center + 0.5 * float(object_info[4]) * img_height)
-                        cdata = {"label": lines[int(object_info[0])].strip(), "bbox": [xminVal, yminVal, xmaxVal, ymaxVal],
+                        cdata = {"label": lines[int(object_info[0])].strip(),
+                                 "bbox": [xminVal, yminVal, xmaxVal, ymaxVal],
                                  "id": o_index}
                         all_objects.append(cdata)
             self.annotations = all_objects
             self.update_annotation_list()  # 更新标注列表
             self.status_var_right.set(f"已加载标注: {len(self.annotations)} 个")
-    
+
     def remove_annotations_file(self, file_path):
         """
         移除所有标注删除文件
@@ -1157,6 +1183,7 @@ class ImageAnnotator(ttk.Frame):
                 return {"error": f"XML解析错误: {e}"}
             except Exception as e:
                 return {"error": f"处理过程中发生错误: {e}"}
+
         xml_path = os.path.splitext(self.image_path)[0] + ".xml"
         if not self.annotations:
             self.remove_annotations_file(xml_path)
@@ -1248,11 +1275,9 @@ class ImageAnnotator(ttk.Frame):
         try:
             # 获取图像尺寸
             img_width, img_height = self.original_image.size
-
             # 创建类别映射
             unique_labels = list(set(ann["label"] for ann in self.annotations))
             label_to_id = {label: self.labels.index(label) for label in unique_labels}
-
             # 生成YOLO格式内容
             yolo_lines = []
             for ann in self.annotations:
